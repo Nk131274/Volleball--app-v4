@@ -96,10 +96,11 @@ function PositionCard({ pos, jersey, playerName, isP1, isLib, isServing, serve,
 
   const ABT = ({ onClick, bg, children, disabled }) => (
     <button onClick={disabled ? undefined : onClick} style={{
-      background: disabled ? "#111" : bg, border: "none", borderRadius: 5,
-      color: disabled ? "#2a2a2a" : "#fff", fontWeight: 700, fontSize: 11,
-      padding: "5px 2px", cursor: disabled ? "not-allowed" : "pointer",
+      background: disabled ? "#111" : bg, border: "none", borderRadius: 7,
+      color: disabled ? "#2a2a2a" : "#fff", fontWeight: 800, fontSize: 15,
+      padding: "10px 4px", cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? 0.3 : 1, flex: 1, lineHeight: 1.2, textAlign: "center",
+      minHeight: 42,
     }}>{children}</button>
   );
 
@@ -109,19 +110,19 @@ function PositionCard({ pos, jersey, playerName, isP1, isLib, isServing, serve,
   return (
     <div onClick={tapMode ? () => onTap(pos) : undefined}
       style={{ background: bgCol, border: `2px solid ${borderCol}`, borderRadius: 8,
-        display: "flex", flexDirection: "column", gap: 3, padding: "3px",
+        display: "flex", flexDirection: "column", gap: 4, padding: "4px",
         cursor: tapMode ? "pointer" : "default", position: "relative",
         transition: "border-color 0.2s, background 0.2s" }}>
 
       {/* Header: pos label + name */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "0 2px" }}>
-        <span style={{ fontSize: 9, color: isP1 && serve === "A" ? "#3b82f6" : "#2d5a7a", fontWeight: 700 }}>P{pos}{canServeBtns ? " 🏐" : ""}</span>
-        <span style={{ fontSize: 8, color: "#4d7fa8", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: "70%", textAlign: "right" }}>{playerName}</span>
+        <span style={{ fontSize: 10, color: isP1 && serve === "A" ? "#3b82f6" : "#2d5a7a", fontWeight: 700 }}>P{pos}{canServeBtns ? " 🏐" : ""}</span>
+        <span style={{ fontSize: 9, color: "#4d7fa8", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: "70%", textAlign: "right" }}>{playerName}</span>
       </div>
 
       {/* Jersey number */}
       <div style={{ textAlign: "center", lineHeight: 1 }}>
-        <span style={{ fontSize: isP1 ? 20 : 17, fontWeight: 900, fontFamily: "monospace", color: isLib ? "#f59e0b" : "#e2e8f0" }}>
+        <span style={{ fontSize: isP1 ? 22 : 19, fontWeight: 900, fontFamily: "monospace", color: isLib ? "#f59e0b" : "#e2e8f0" }}>
           {isLib ? "L" : `#${jersey}`}
         </span>
       </div>
@@ -129,24 +130,24 @@ function PositionCard({ pos, jersey, playerName, isP1, isLib, isServing, serve,
       {!tapMode && (
         <>
           {/* Attack + Error */}
-          <div style={{ display: "flex", gap: 2 }}>
+          <div style={{ display: "flex", gap: 3, flex: 1 }}>
             <ABT onClick={stop(onAttack)} bg="linear-gradient(135deg,#1e40af,#1d4ed8)">⚡ Punto</ABT>
             <ABT onClick={stop(onError)} bg="linear-gradient(135deg,#9a3412,#c2410c)">❌ Err.</ABT>
           </div>
 
           {/* P1 serve buttons */}
           {canServeBtns && (
-            <div style={{ display: "flex", gap: 2 }}>
+            <div style={{ display: "flex", gap: 3 }}>
               <ABT onClick={stop(onAce)} bg="linear-gradient(135deg,#14532d,#15803d)">🏐 Ace</ABT>
               <ABT onClick={stop(onServeError)} bg="linear-gradient(135deg,#7f1d1d,#991b1b)">💥 E.Srv</ABT>
             </div>
           )}
 
-          {/* Generic error — only P1, below serve buttons */}
+          {/* Generic error — only P1 */}
           {isP1 && (
             <button onClick={stop(onGenericError)} style={{
-              background: "#1a0a0a", border: "1px solid #3a1a1a", borderRadius: 5,
-              color: "#ef4444", fontWeight: 700, fontSize: 9, padding: "4px 2px",
+              background: "#1a0a0a", border: "1px solid #3a1a1a", borderRadius: 7,
+              color: "#ef4444", fontWeight: 700, fontSize: 12, padding: "8px 4px",
               cursor: "pointer", textAlign: "center", width: "100%",
             }}>⚠️ Err. Squadra</button>
           )}
@@ -156,7 +157,7 @@ function PositionCard({ pos, jersey, playerName, isP1, isLib, isServing, serve,
       {/* Tap overlay */}
       {tapMode && (selected || isCorrectSrc) && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#ffffff18", borderRadius: 6 }}>
-          <div style={{ fontSize: 22, color: selected ? "#60a5fa" : "#a855f7" }}>{selected ? "✓" : "→"}</div>
+          <div style={{ fontSize: 26, color: selected ? "#60a5fa" : "#a855f7" }}>{selected ? "✓" : "→"}</div>
         </div>
       )}
     </div>
@@ -835,7 +836,7 @@ export default function VolleyballApp() {
           </div>
 
           {/* 6 POSITION CARDS — 2 rows of 3 */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 3, padding: 3, flex: 1, minHeight: 0, animation: rotAnim ? "rotGlow 0.6s ease" : "none" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 5, padding: 5, flex: 1, minHeight: 0, animation: rotAnim ? "rotGlow 0.6s ease" : "none" }}>
             {[...FRONT_ROW, ...BACK_ROW].map(pos => {
               const jersey = rot[pos - 1];
               const p = activeRoster.find(r => r.jersey === jersey) || { name: "", role: "" };
