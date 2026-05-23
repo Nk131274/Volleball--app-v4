@@ -63,22 +63,28 @@ function ScoreFlash({ score, team, flash }) {
 // ─── STATS TABLE ──────────────────────────────────────────────────────────────
 function StatsTable({ jerseys, statsMap, roster }) {
   if (!jerseys.length) return <div style={{ textAlign: "center", color: "#4d7fa8", padding: 14, fontSize: 13 }}>Nessun dato</div>;
-  const C = ({ v, col }) => <div style={{ textAlign: "center", fontWeight: 700, fontSize: 12, color: (v && v !== "—" && v !== 0) ? col : "#1e3a5f" }}>{v ?? 0}</div>;
+  const C = ({ v, col }) => <div style={{ textAlign: "center", fontWeight: 700, fontSize: 11, color: (v && v !== "—" && v !== 0) ? col : "#1e3a5f" }}>{v ?? 0}</div>;
+  const cols = "1.3fr .45fr .45fr .55fr .55fr .55fr .65fr .65fr";
   return (
     <div style={{ background: "#0d1f35", borderRadius: 12, overflow: "hidden", border: "1px solid #1e3a5f" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr .55fr .55fr .55fr .55fr .65fr .65fr", background: "#060e1a", padding: "6px 8px", gap: 2 }}>
-        {["Giocatrice","Pt","Ace","Err","Batt","%Ace","%Err"].map(h => <div key={h} style={{ fontSize: 8, color: "#4d7fa8", fontWeight: 700, textAlign: "center" }}>{h}</div>)}
+      <div style={{ display: "grid", gridTemplateColumns: cols, background: "#060e1a", padding: "6px 8px", gap: 2 }}>
+        {["Giocatrice","Pt","Ace","E.Batt","E.Azio","Batt","%Ace","%E.Batt"].map(h => <div key={h} style={{ fontSize: 8, color: "#4d7fa8", fontWeight: 700, textAlign: "center" }}>{h}</div>)}
       </div>
       {jerseys.map(j => {
         const p = roster.find(r => r.jersey === j) || { name: "" };
-        const st = statsMap[j] || { punti: 0, ace: 0, errori: 0, erroriServ: 0, battute: 0 };
-        const pA = st.battute > 0 ? `${Math.round(st.ace / st.battute * 100)}%` : "—";
-        const pE = st.battute > 0 ? `${Math.round(st.erroriServ / st.battute * 100)}%` : "—";
+        const st = statsMap[j] || { punti: 0, ace: 0, erroriServ: 0, erroriAzione: 0, battute: 0 };
+        const pA  = st.battute > 0 ? `${Math.round(st.ace / st.battute * 100)}%` : "—";
+        const pEB = st.battute > 0 ? `${Math.round(st.erroriServ / st.battute * 100)}%` : "—";
         return (
-          <div key={j} style={{ display: "grid", gridTemplateColumns: "1.4fr .55fr .55fr .55fr .55fr .65fr .65fr", padding: "7px 8px", borderTop: "1px solid #1e2d3d", gap: 2 }}>
+          <div key={j} style={{ display: "grid", gridTemplateColumns: cols, padding: "7px 8px", borderTop: "1px solid #1e2d3d", gap: 2 }}>
             <div><div style={{ fontFamily: "monospace", fontWeight: 900, fontSize: 11, color: "#e2e8f0" }}>#{j}</div><div style={{ fontSize: 8, color: "#4d7fa8" }}>{p.name}</div></div>
-            <C v={st.punti} col="#60a5fa" /><C v={st.ace} col="#22c55e" /><C v={st.errori} col="#ef4444" />
-            <C v={st.battute} col="#94a3b8" /><C v={pA} col="#22c55e" /><C v={pE} col="#f97316" />
+            <C v={st.punti} col="#60a5fa" />
+            <C v={st.ace} col="#22c55e" />
+            <C v={st.erroriServ} col="#f97316" />
+            <C v={st.erroriAzione} col="#ef4444" />
+            <C v={st.battute} col="#94a3b8" />
+            <C v={pA} col="#22c55e" />
+            <C v={pEB} col="#f97316" />
           </div>
         );
       })}
@@ -243,6 +249,11 @@ export default function VolleyballApp() {
   const [correctMode,   setCorrectMode]   = useState(false);
   const [correctSrcPos, setCorrectSrcPos] = useState(null);
 
+  // ── Libero check at set start
+  const [liberoCheckModal, setLiberoCheckModal] = useState(false);
+  const [liberoCheckOptions, setLiberoCheckOptions] = useState([]); // centrali in back row
+  const [pendingSetRot,     setPendingSetRot]     = useState(null); // built rot before libero check
+
   // ── Serve tracking
   const [serveCounts,      setServeCounts]      = useState({});
   const [serveCountsBySet, setServeCountsBySet] = useState({});
@@ -265,19 +276,30 @@ export default function VolleyballApp() {
     serveCounts, serveCountsBySet, endWinner,
     currentTeamId: currentTeam?.id,
     opponentName, matchDate, homeAway,
-  }), [fase, setN, setVinti, score, serve, rot, sp, liberoOnField, liberoReplacing, log, subs, setLineups, serveCounts, serveCountsBySet, endWinner, currentTeam, opponentName, matchDate, homeAway]);
+    // setup phase state
+    setupStep, setupSP, setupJerseys, setupServe,
+  }), [fase, setN, setVinti, score, serve, rot, sp, liberoOnField, liberoReplacing, log, subs, setLineups, serveCounts, serveCountsBySet, endWinner, currentTeam, opponentName, matchDate, homeAway, setupStep, setupSP, setupJerseys, setupServe]);
 
-  // Save snapshot whenever log changes (= after every point)
+  // Save on every point (gioco) and every setup player selection
   useEffect(() => {
     if (fase === "gioco" && log.length > 0) {
       LS.set("vb_game_snap", buildGameSnapshot());
     }
   }, [log, fase]);
 
-  // On mount: check for interrupted game
+  useEffect(() => {
+    if (fase === "setup" && (setupJerseys.length > 0 || setupSP)) {
+      LS.set("vb_game_snap", buildGameSnapshot());
+    }
+  }, [setupJerseys, setupSP, setupStep, fase]);
+
+  // On mount: check for interrupted game or setup
   const [resumePrompt, setResumePrompt] = useState(() => {
     const snap = LS.get("vb_game_snap", null);
-    return snap && snap.fase === "gioco" && snap.log?.length > 0 ? snap : null;
+    if (!snap) return null;
+    if (snap.fase === "gioco" && snap.log?.length > 0) return snap;
+    if (snap.fase === "setup" && (snap.setupJerseys?.length > 0 || snap.setupSP)) return snap;
+    return null;
   });
 
   const handleResumeGame = () => {
@@ -287,13 +309,21 @@ export default function VolleyballApp() {
     setOpponentName(snap.opponentName ?? "");
     setMatchDate(snap.matchDate ?? todayStr());
     setHomeAway(snap.homeAway ?? "home");
-    setSetN(snap.setN); setSetVinti(snap.setVinti); setScore(snap.score);
-    setServe(snap.serve); setRot(snap.rot); setSP(snap.sp);
+    setSetN(snap.setN); setSetVinti(snap.setVinti ?? { A: 0, B: 0 }); setScore(snap.score ?? { A: 0, B: 0 });
+    setServe(snap.serve ?? "A"); setRot(snap.rot ?? []); setSP(snap.sp ?? 1);
     setLiberoOnField(snap.liberoOnField ?? false); setLiberoReplacing(snap.liberoReplacing ?? null);
-    setLog(snap.log); setSubs(snap.subs ?? []); setSetLineups(snap.setLineups ?? []);
+    setLog(snap.log ?? []); setSubs(snap.subs ?? []); setSetLineups(snap.setLineups ?? []);
     setServeCounts(snap.serveCounts ?? {}); setServeCountsBySet(snap.serveCountsBySet ?? {});
     setEndWinner(snap.endWinner ?? null);
-    setFase("gioco"); setResumePrompt(null);
+    // Restore setup state if resuming from setup phase
+    if (snap.fase === "setup") {
+      setSetupStep(snap.setupStep ?? "setter");
+      setSetupSP(snap.setupSP ?? null);
+      setSetupJerseys(snap.setupJerseys ?? []);
+      setSetupServe(snap.setupServe ?? "A");
+    }
+    setFase(snap.fase === "setup" ? "setup" : "gioco");
+    setResumePrompt(null);
   };
 
   const handleDiscardResume = () => { LS.del("vb_game_snap"); setResumePrompt(null); };
@@ -361,9 +391,26 @@ export default function VolleyballApp() {
   const handleStartSet = () => {
     const newRot = new Array(6).fill("");
     posOrder(setupSP).forEach((p, i) => { newRot[p-1] = setupJerseys[i]; });
-    setRot(newRot); setSP(setupSP); setScore({ A: 0, B: 0 }); setServe(setupServe);
-    setPrevSnap(null); setLiberoOnField(false); setLiberoReplacing(null);
-    setSetLineups(prev => [...prev, { setN, rot: newRot, sp: setupSP }]);
+    // Check if any centrale is in back row (P1=idx0, P5=idx4, P6=idx5)
+    const backRowIdx = [0, 4, 5];
+    const centraliInBack = backRowIdx
+      .map(idx => newRot[idx])
+      .filter(j => j && isCentrale(j));
+    if (liberoJersey && centraliInBack.length > 0) {
+      setPendingSetRot(newRot);
+      setLiberoCheckOptions(centraliInBack);
+      setLiberoCheckModal(true);
+    } else {
+      commitStartSet(newRot, false, null);
+    }
+  };
+
+  const commitStartSet = (newRot, libOn, libRep) => {
+    const finalRot = libOn && libRep ? newRot.map(j => j === libRep ? liberoJersey : j) : [...newRot];
+    setRot(finalRot); setSP(setupSP); setScore({ A: 0, B: 0 }); setServe(setupServe);
+    setPrevSnap(null); setLiberoOnField(libOn); setLiberoReplacing(libRep);
+    setSetLineups(prev => [...prev, { setN, rot: finalRot, sp: setupSP }]);
+    setLiberoCheckModal(false); setPendingSetRot(null); setLiberoCheckOptions([]);
     setFase("gioco");
   };
 
@@ -379,7 +426,7 @@ export default function VolleyballApp() {
   };
 
   const applyPoint = (teamPoint, tipo, maglia) => {
-    const snap = { rot:[...rot], sp, serve, score:{...score}, log:[...log], liberoOnField, liberoReplacing, serveCounts:{...serveCounts}, serveCountsBySet: JSON.parse(JSON.stringify(serveCountsBySet)) };
+    const snap = { rot:[...rot], sp, serve, score:{...score}, log:[...log], liberoOnField, liberoReplacing, serveCounts:{...serveCounts}, serveCountsBySet: JSON.parse(JSON.stringify(serveCountsBySet)), setVinti:{...setVinti}, fase, endWinner };
     setPrevSnap(snap);
     const ns = { A: score.A, B: score.B }; ns[teamPoint]++; triggerFlash(teamPoint);
     let nr = [...rot], nsp = sp, nsrv = serve;
@@ -412,9 +459,12 @@ export default function VolleyballApp() {
       const winner = ns.A > ns.B ? "A" : "B"; setEndWinner(winner);
       const nSV = { A: setVinti.A, B: setVinti.B }; nSV[winner]++;
       setSetVinti(nSV);
-      // Clear autosave when match ends
-      LS.del("vb_game_snap");
-      setFase(nSV[winner] >= 3 ? "matchOver" : "setOver");
+      if (nSV[winner] >= 3) {
+        LS.del("vb_game_snap"); // clear only on full match end
+        setFase("matchOver");
+      } else {
+        setFase("setOver"); // keep autosave alive during set break
+      }
     }
   };
 
@@ -434,6 +484,9 @@ export default function VolleyballApp() {
     setRot(prevSnap.rot); setSP(prevSnap.sp); setServe(prevSnap.serve); setScore(prevSnap.score); setLog(prevSnap.log);
     setLiberoOnField(prevSnap.liberoOnField ?? false); setLiberoReplacing(prevSnap.liberoReplacing ?? null);
     setServeCounts(prevSnap.serveCounts ?? {}); setServeCountsBySet(prevSnap.serveCountsBySet ?? {});
+    if (prevSnap.setVinti) setSetVinti(prevSnap.setVinti);
+    if (prevSnap.endWinner !== undefined) setEndWinner(prevSnap.endWinner);
+    if (prevSnap.fase) setFase(prevSnap.fase);
     setPrevSnap(null);
   };
 
@@ -465,16 +518,22 @@ export default function VolleyballApp() {
     const sl = isAll ? log : log.filter(l => l.Set === setNum);
     const sc = isAll ? serveCounts : (serveCountsBySet[setNum] || {});
     const st = {};
-    const ensure = j => { if (!st[j]) st[j] = { punti: 0, ace: 0, attacchi: 0, errori: 0, erroriServ: 0, battute: 0 }; };
+    const ensure = j => { if (!st[j]) st[j] = { punti: 0, ace: 0, attacchi: 0, erroriServ: 0, erroriAzione: 0, battute: 0 }; };
     rot.forEach(j => j && ensure(j));
     setLineups.forEach(s => s.rot.forEach(j => j && ensure(j)));
     subs.forEach(s => { ensure(s.in); ensure(s.out); });
     Object.entries(sc).forEach(([j, c]) => { ensure(j); st[j].battute = c; });
     sl.forEach(e => {
       const j = e["Maglia responsabile"]; if (!j) return; ensure(j);
-      if (e["Squadra punto"] === "A") { st[j].punti++; if (e["Tipo azione"] === "Ace") st[j].ace++; if (e["Tipo azione"] === "Attacco vincente") st[j].attacchi++; }
-      else if (e["Tipo azione"] === "Errore in battuta") { st[j].errori++; st[j].erroriServ++; }
-      else if (e["Tipo azione"] === "Errore") st[j].errori++;
+      if (e["Squadra punto"] === "A") {
+        st[j].punti++;
+        if (e["Tipo azione"] === "Ace") st[j].ace++;
+        if (e["Tipo azione"] === "Attacco vincente") st[j].attacchi++;
+      } else if (e["Tipo azione"] === "Errore in battuta") {
+        st[j].erroriServ++;
+      } else if (e["Tipo azione"] === "Errore") {
+        st[j].erroriAzione++;
+      }
     });
     return st;
   };
@@ -537,17 +596,26 @@ export default function VolleyballApp() {
     const ws1 = XLSX.utils.aoa_to_sheet(aoa1); ws1["!cols"] = [{wch:6},{wch:12},{wch:20},{wch:8},{wch:16},{wch:10},{wch:6},{wch:6}];
     XLSX.utils.book_append_sheet(wb, ws1, "Andamento");
     const allJ = [...new Set([...msl.flatMap(sl => sl.rot), ...ms.flatMap(s => [s.in, s.out])])].filter(Boolean).sort((a, b) => parseInt(a) - parseInt(b));
-    const hdr = ["Maglia","Nome","Ruolo",...uSets.flatMap(s=>[`S${s} Pt`,`S${s} Ace`,`S${s} Err`,`S${s} Batt`,`S${s} %Ace`,`S${s} %Err`]),"Tot Pt","Tot Ace","Tot Err","Tot Batt","Tot %Ace","Tot %Err"];
+    const hdr = ["Maglia","Nome","Ruolo",...uSets.flatMap(s=>[`S${s} Pt`,`S${s} Ace`,`S${s} E.Batt`,`S${s} E.Azio`,`S${s} Batt`,`S${s} %Ace`,`S${s} %E.Batt`]),"Tot Pt","Tot Ace","Tot E.Batt","Tot E.Azio","Tot Batt","Tot %Ace","Tot %E.Batt"];
     const rows = allJ.map(j => {
       const pl = mr.find(r => r.jersey === j) || { name: "", role: "" };
-      const row = [`#${j}`, pl.name, pl.role]; let tp=0,ta=0,te=0,tb=0;
+      const row = [`#${j}`, pl.name, pl.role]; let tp=0,ta=0,teb=0,tea=0,tb=0;
       uSets.forEach(sn => {
-        const batt = (mscbs[sn]||{})[j]||0; let pt=0,ace=0,err=0;
-        ml.filter(l=>l.Set===sn).forEach(e=>{ if(e["Maglia responsabile"]!==j)return; if(e["Squadra punto"]==="A"){pt++;if(e["Tipo azione"]==="Ace")ace++;}else if(e["Tipo azione"]==="Errore in battuta"||e["Tipo azione"]==="Errore")err++; });
-        row.push(pt,ace,err,batt,batt>0?`${Math.round(ace/batt*100)}%`:"—",batt>0?`${Math.round(err/batt*100)}%`:"—");
-        tp+=pt;ta+=ace;te+=err;tb+=batt;
+        const batt = (mscbs[sn]||{})[j]||0; let pt=0,ace=0,errBatt=0,errAz=0;
+        ml.filter(l=>l.Set===sn).forEach(e=>{
+          if(e["Maglia responsabile"]!==j)return;
+          if(e["Squadra punto"]==="A"){pt++;if(e["Tipo azione"]==="Ace")ace++;}
+          else if(e["Tipo azione"]==="Errore in battuta")errBatt++;
+          else if(e["Tipo azione"]==="Errore")errAz++;
+        });
+        row.push(pt,ace,errBatt,errAz,batt,
+          batt>0?`${Math.round(ace/batt*100)}%`:"—",
+          batt>0?`${Math.round(errBatt/batt*100)}%`:"—");
+        tp+=pt;ta+=ace;teb+=errBatt;tea+=errAz;tb+=batt;
       });
-      row.push(tp,ta,te,tb,tb>0?`${Math.round(ta/tb*100)}%`:"—",tb>0?`${Math.round(te/tb*100)}%`:"—");
+      row.push(tp,ta,teb,tea,tb,
+        tb>0?`${Math.round(ta/tb*100)}%`:"—",
+        tb>0?`${Math.round(teb/tb*100)}%`:"—");
       return row;
     });
     const ws2 = XLSX.utils.aoa_to_sheet([hdr,...rows]); ws2["!cols"]=[{wch:8},{wch:16},{wch:14},...Array(hdr.length-3).fill({wch:9})];
@@ -610,11 +678,10 @@ export default function VolleyballApp() {
               <div style={{ fontSize: 30, marginBottom: 6 }}>⚡</div>
               <div style={{ fontSize: 15, fontWeight: 900 }}>Partita in corso!</div>
               <div style={{ fontSize: 12, color: "#4d7fa8", marginTop: 5 }}>
-                Trovata una partita salvata automaticamente.<br />
-                Vuoi riprendere da dove eri rimasto?
-              </div>
-              <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 14, color: "#22c55e" }}>
-                {resumePrompt.score?.A ?? 0} : {resumePrompt.score?.B ?? 0} — Set {resumePrompt.setN}
+                Trovata una sessione interrotta.<br />
+                {resumePrompt.fase === "gioco"
+                  ? `Set ${resumePrompt.setN} — ${resumePrompt.score?.A ?? 0} : ${resumePrompt.score?.B ?? 0}`
+                  : `Set ${resumePrompt.setN} — formazione (${resumePrompt.setupJerseys?.length ?? 0}/6 giocatrici)`}
               </div>
             </div>
             <button onClick={handleResumeGame} style={{ ...S.btn("linear-gradient(135deg,#16a34a,#15803d)"), marginBottom: 8 }}>▶ Riprendi partita</button>
@@ -919,9 +986,15 @@ export default function VolleyballApp() {
             <div style={{ fontSize: 36, fontWeight: 900, marginBottom: 3, fontFamily: "monospace" }}>
               <span style={{ color: "#60a5fa" }}>{score.A}</span><span style={{ color: "#1e3a5f", margin: "0 5px" }}>:</span><span style={{ color: "#fb923c" }}>{score.B}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 4, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 4, marginBottom: 14 }}>
               <span style={S.tag("#60a5fa")}>A:{setVinti.A}</span><span style={S.tag("#fb923c")}>B:{setVinti.B}</span>
             </div>
+            {/* Undo last point (set-winning point correction) */}
+            {prevSnap && (
+              <button onClick={handleUndo} style={{ width: "100%", marginBottom: 8, padding: 11, borderRadius: 11, background: "#1a2a1a", border: "1px solid #22c55e44", color: "#22c55e", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                ↩ Annulla ultimo punto (errore segnalazione)
+              </button>
+            )}
             <button onClick={handleNextSet} style={S.btn("linear-gradient(135deg,#16a34a,#15803d)")}>▶  Set {setN + 1}</button>
             <button onClick={handleExport} style={{ width: "100%", marginTop: 7, padding: 9, borderRadius: 11, background: "#0d1f35", border: "1px solid #1e3a5f", color: "#4d7fa8", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>📥 Excel</button>
           </div>
@@ -1007,10 +1080,15 @@ export default function VolleyballApp() {
           const isAll=tab==="total"; const sn=isAll?null:parseInt(tab.slice(1));
           const sl=isAll?m.log:m.log.filter(l=>l.Set===sn);
           const sc=isAll?m.serveCounts:((m.serveCountsBySet||{})[sn]||{});
-          const st={}; const ensure=j=>{if(!st[j])st[j]={punti:0,ace:0,errori:0,erroriServ:0,battute:0};};
+          const st={}; const ensure=j=>{if(!st[j])st[j]={punti:0,ace:0,erroriServ:0,erroriAzione:0,battute:0};};
           mr.forEach(p=>ensure(p.jersey));
           Object.entries(sc).forEach(([j,c])=>{ensure(j);st[j].battute=c;});
-          sl.forEach(e=>{const j=e["Maglia responsabile"];if(!j)return;ensure(j);if(e["Squadra punto"]==="A"){st[j].punti++;if(e["Tipo azione"]==="Ace")st[j].ace++;}else if(e["Tipo azione"]==="Errore in battuta"){st[j].errori++;st[j].erroriServ++;}else if(e["Tipo azione"]==="Errore")st[j].errori++;});
+          sl.forEach(e=>{
+            const j=e["Maglia responsabile"];if(!j)return;ensure(j);
+            if(e["Squadra punto"]==="A"){st[j].punti++;if(e["Tipo azione"]==="Ace")st[j].ace++;}
+            else if(e["Tipo azione"]==="Errore in battuta")st[j].erroriServ++;
+            else if(e["Tipo azione"]==="Errore")st[j].erroriAzione++;
+          });
           return st;
         };
         return (
@@ -1087,6 +1165,43 @@ export default function VolleyballApp() {
           </div>
         );
       })()}
+
+      {/* ═══ LIBERO CHECK MODAL ═══ */}
+      {liberoCheckModal && (
+        <div style={S.overlay}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 320, border: "1px solid #f59e0b44", animation: "fadeIn 0.2s ease" }}>
+            <div style={{ textAlign: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 30, marginBottom: 5 }}>🟡</div>
+              <div style={{ fontSize: 15, fontWeight: 900 }}>Libero già in campo?</div>
+              <div style={{ fontSize: 12, color: "#4d7fa8", marginTop: 6, lineHeight: 1.5 }}>
+                C'è un/a Centrale in seconda linea.<br/>
+                Il Libero <span style={{ color: "#f59e0b", fontFamily: "monospace", fontWeight: 700 }}>#{liberoJersey}</span> è già entrato/a al suo posto?
+              </div>
+            </div>
+            <div style={{ ...S.label, marginBottom: 8 }}>Seleziona il Centrale uscito</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              {liberoCheckOptions.map(j => {
+                const p = activeRoster.find(r => r.jersey === j) || { name: "" };
+                return (
+                  <button key={j} onClick={() => commitStartSet(pendingSetRot, true, j)}
+                    style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: "#060e1a", border: "1px solid #f59e0b44", borderRadius: 11, cursor: "pointer" }}>
+                    <div style={{ fontFamily: "monospace", fontWeight: 900, fontSize: 19, color: "#f59e0b", width: 38 }}>#{j}</div>
+                    <div style={{ flex: 1, textAlign: "left" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#e2e8f0" }}>{p.name}</div>
+                      <div style={{ fontSize: 10, color: "#4d7fa8" }}>Centrale — uscito per Libero</div>
+                    </div>
+                    <div style={{ fontSize: 14, color: "#f59e0b" }}>›</div>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => commitStartSet(pendingSetRot, false, null)}
+              style={{ width: "100%", padding: 11, borderRadius: 11, background: "#0d1f35", border: "1px solid #1e3a5f", color: "#4d7fa8", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              No, il Libero non è ancora in campo
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ═══ SAVE TEAM MODAL ═══ */}
       {saveTeamModal && (
